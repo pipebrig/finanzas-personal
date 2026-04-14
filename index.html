@@ -238,21 +238,69 @@ function initGoogleAuth(){
   const s=document.createElement('script');
   s.src='https://accounts.google.com/gsi/client';
   s.onload=()=>{
+    // Token client para login manual
     tokenClient=google.accounts.oauth2.initTokenClient({
       client_id:CLIENT_ID,scope:SCOPES,
       callback:async(resp)=>{
         if(resp.error)return;
         accessToken=resp.access_token;
-        document.getElementById('auth-screen').style.display='none';
-        document.getElementById('app').style.display='block';
-        await initSheet();await cargarTodo();
+        // Guardar email para auto-login
+        try{
+          const r=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+accessToken}});
+          const u=await r.json();
+          localStorage.setItem('fp_email',u.email);
+        }catch(e){}
+        entrarApp();
       }
     });
+    // Intentar auto-login silencioso
+    const savedEmail=localStorage.getItem('fp_email');
+    if(savedEmail){
+      const silentClient=google.accounts.oauth2.initTokenClient({
+        client_id:CLIENT_ID,scope:SCOPES,
+        prompt:'none',
+        login_hint:savedEmail,
+        callback:async(resp)=>{
+          if(resp.error){
+            // Si falla el auto-login, mostrar pantalla de login
+            document.getElementById('auth-screen').style.display='flex';
+            return;
+          }
+          accessToken=resp.access_token;
+          entrarApp();
+        }
+      });
+      silentClient.requestAccessToken();
+    } else {
+      document.getElementById('auth-screen').style.display='flex';
+    }
   };
   document.head.appendChild(s);
 }
+
+async function entrarApp(){
+  document.getElementById('auth-screen').style.display='none';
+  document.getElementById('app').style.display='block';
+  await initSheet();await cargarTodo();
+  // Refrescar token cada 45 minutos automáticamente
+  setInterval(()=>{
+    const savedEmail=localStorage.getItem('fp_email');
+    if(!savedEmail)return;
+    const refreshClient=google.accounts.oauth2.initTokenClient({
+      client_id:CLIENT_ID,scope:SCOPES,prompt:'none',login_hint:savedEmail,
+      callback:(resp)=>{if(!resp.error)accessToken=resp.access_token;}
+    });
+    refreshClient.requestAccessToken();
+  },45*60*1000);
+}
+
 function signIn(){tokenClient.requestAccessToken();}
-function signOut(){accessToken=null;document.getElementById('app').style.display='none';document.getElementById('auth-screen').style.display='flex';}
+function signOut(){
+  accessToken=null;
+  localStorage.removeItem('fp_email');
+  document.getElementById('app').style.display='none';
+  document.getElementById('auth-screen').style.display='flex';
+}
 
 async function sheetsGet(range){
   const r=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(range)}`,{headers:{Authorization:'Bearer '+accessToken}});
