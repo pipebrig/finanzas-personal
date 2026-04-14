@@ -212,8 +212,8 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
         <div class="stat-card"><div class="stat-label">Balance</div><div class="stat-value" id="dash-balance">$ 0</div></div>
       </div>
       <button class="global-btn" onclick="abrirGlobal()">
-        <span>Ver balance global acumulado →</span>
-        <span style="color:var(--muted);font-size:12px">Desde el inicio</span>
+        <span>Ver patrimonio total →</span>
+        <span style="color:var(--muted);font-size:12px">FIMA + inversiones + acumulado</span>
       </button>
       <div class="list-card"><div class="list-card-title">Gastos por categoría</div><div id="dash-cats"></div></div>
       <div class="list-card"><div class="list-card-title">Por medio de pago</div><div id="dash-medios"></div></div>
@@ -400,8 +400,8 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
       <div class="list-card">
         <div class="config-row">
           <div>
-            <div class="config-label">Saldo inicial</div>
-            <div style="font-size:12px;color:var(--muted);margin-top:2px">Plata arrastrada de antes de usar la app</div>
+            <div class="config-label">Saldo inicial FIMA</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:2px">Lo que tenías en el FIMA antes de empezar a usar la app</div>
           </div>
           <button class="config-btn" onclick="editarSaldoInicial()">Editar</button>
         </div>
@@ -730,48 +730,112 @@ function renderReporte(){
 
 // ── GLOBAL ────────────────────────────────────────────────────────
 function abrirGlobal(){
-  document.getElementById('modal-title').textContent='Balance global';
-  const totalIngresos=txCache.filter(t=>t.tipo==='ingreso').reduce((s,t)=>s+t.monto,0);
-  const totalGastos=txCache.filter(t=>t.tipo==='gasto').reduce((s,t)=>s+t.monto,0);
-  const totalAportes=txCache.filter(t=>t.tipo==='inversion'&&t.invMov!=='Retiro').reduce((s,t)=>s+t.monto,0);
-  const totalRetiros=txCache.filter(t=>t.tipo==='inversion'&&t.invMov==='Retiro').reduce((s,t)=>s+t.monto,0);
-  const invertidoNeto=totalAportes-totalRetiros;
-  const disponibleGlobal=saldoInicial+totalIngresos-totalGastos-invertidoNeto;
+  document.getElementById('modal-title').textContent='Patrimonio total';
 
-  // Mes a mes
+  // Construir saldo rodante mes a mes
   const meses={};
   txCache.forEach(t=>{
     const m=t.fecha.substring(0,7);
     if(!meses[m])meses[m]={ingresos:0,gastos:0,invertido:0};
     if(t.tipo==='ingreso')meses[m].ingresos+=t.monto;
     if(t.tipo==='gasto')meses[m].gastos+=t.monto;
-    if(t.tipo==='inversion')meses[m].invertido+=(t.invMov==='Retiro'?-t.monto:t.monto);
+    if(t.tipo==='inversion'){
+      // FIMA no resta del disponible — es disponible
+      if(t.invTipo!=='Fondo FIMA'){
+        meses[m].invertido+=(t.invMov==='Retiro'?-t.monto:t.monto);
+      }
+    }
   });
-  const mesesOrdenados=Object.entries(meses).sort((a,b)=>a[0].localeCompare(b[0]));
+
+  const mesesOrdenados=Object.keys(meses).sort();
+
+  // Calcular saldo rodante: cada mes arranca desde donde terminó el anterior
+  let saldoRodante=saldoInicial;
+  const filasMeses=mesesOrdenados.map(m=>{
+    const d=meses[m];
+    const deltaFima=d.ingresos-d.gastos-d.invertido;
+    saldoRodante+=deltaFima;
+    const fecha=new Date(m+'-15T12:00:00');
+    const nombre=fecha.toLocaleDateString('es-AR',{month:'short',year:'2-digit'});
+    return{m,nombre,ingresos:d.ingresos,gastos:d.gastos,invertido:d.invertido,fimaFinal:saldoRodante};
+  });
+
+  // Totales globales
+  const totalIngresos=txCache.filter(t=>t.tipo==='ingreso').reduce((s,t)=>s+t.monto,0);
+  const totalGastos=txCache.filter(t=>t.tipo==='gasto').reduce((s,t)=>s+t.monto,0);
+
+  // Total invertido (sin FIMA)
+  const totalInvertido=txCache.filter(t=>t.tipo==='inversion'&&t.invTipo!=='Fondo FIMA').reduce((s,t)=>s+(t.invMov==='Retiro'?-t.monto:t.monto),0);
+
+  // Saldo FIMA actual = saldo rodante final
+  const fimaActual=saldoRodante;
+
+  // Patrimonio neto = FIMA + inversiones
+  const patrimonioNeto=fimaActual+totalInvertido;
+
+  // En USD
+  const fimaUSD=dolarCache>0?fimaActual/dolarCache:0;
+  const patrimonioUSD=dolarCache>0?patrimonioNeto/dolarCache:0;
 
   document.getElementById('modal-content').innerHTML=`
-    <div class="big-card" style="margin-bottom:12px">
-      <div class="big-card-label">Disponible global</div>
-      <div class="big-card-value ${disponibleGlobal>=0?'green':'red'}">${fmt(disponibleGlobal)}</div>
-      <div class="big-card-sub">Saldo inicial + ingresos − gastos − invertido</div>
+    <!-- PATRIMONIO NETO -->
+    <div class="big-card" style="margin-bottom:10px;background:var(--surface2)">
+      <div class="big-card-label">Patrimonio neto total</div>
+      <div class="big-card-value ${patrimonioNeto>=0?'green':'red'}">${fmt(patrimonioNeto)}</div>
+      <div class="big-card-sub">FIMA + inversiones · U$S ${fimaUSD>0?patrimonioUSD.toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0}):'—'} al cambio oficial</div>
     </div>
-    <div class="stats-grid" style="margin-bottom:12px">
-      <div class="stat-card"><div class="stat-label">Saldo inicial</div><div class="stat-value amber">${fmt(saldoInicial)}</div></div>
-      <div class="stat-card"><div class="stat-label">Total ingresos</div><div class="stat-value green">${fmt(totalIngresos)}</div></div>
-      <div class="stat-card"><div class="stat-label">Total gastos</div><div class="stat-value red">${fmt(totalGastos)}</div></div>
-      <div class="stat-card"><div class="stat-label">Total invertido</div><div class="stat-value blue">${fmt(invertidoNeto)}</div></div>
+
+    <!-- FIMA Y INVERSIONES -->
+    <div class="stats-grid" style="margin-bottom:10px">
+      <div class="stat-card">
+        <div class="stat-label">FIMA (disponible)</div>
+        <div class="stat-value green">${fmt(fimaActual)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">U$S ${fimaUSD.toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Inversiones</div>
+        <div class="stat-value blue">${fmt(totalInvertido)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">CEDEARs, acciones, etc.</div>
+      </div>
     </div>
-    ${mesesOrdenados.length>0?`
+
+    <!-- ACUMULADO -->
+    <div class="stats-grid" style="margin-bottom:10px">
+      <div class="stat-card">
+        <div class="stat-label">Saldo inicial FIMA</div>
+        <div class="stat-value amber">${fmt(saldoInicial)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total ingresos</div>
+        <div class="stat-value green">${fmt(totalIngresos)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total gastos</div>
+        <div class="stat-value red">${fmt(totalGastos)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total invertido</div>
+        <div class="stat-value blue">${fmt(totalInvertido)}</div>
+      </div>
+    </div>
+
+    <!-- MES A MES -->
+    ${filasMeses.length>0?`
     <div class="list-card">
-      <div class="list-card-title">Mes a mes</div>
-      ${mesesOrdenados.map(([m,d])=>{
-        const fecha=new Date(m+'-15');
-        const nombre=fecha.toLocaleDateString('es-AR',{month:'short',year:'2-digit'});
-        const bal=d.ingresos-d.gastos;
-        return`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="color:var(--muted);min-width:60px">${nombre}</span><span class="${d.ingresos>0?'green':''}">${fmt(d.ingresos)}</span><span class="red">-${fmt(d.gastos)}</span><span class="${bal>=0?'green':'red'}">${fmt(bal)}</span></div>`;
-      }).join('')}
-      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);padding-top:6px"><span>Mes</span><span>Ingresos</span><span>Gastos</span><span>Balance</span></div>
-    </div>`:''}`;
+      <div class="list-card-title">FIMA mes a mes (saldo rodante)</div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);padding-bottom:6px;border-bottom:1px solid var(--border)">
+        <span>Mes</span><span>Ingresos</span><span>Gastos</span><span>Invertido</span><span>FIMA final</span>
+      </div>
+      ${[...filasMeses].reverse().map(r=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px">
+          <span style="color:var(--muted);min-width:44px;font-weight:500">${r.nombre}</span>
+          <span style="color:var(--green)">+${fmt(r.ingresos)}</span>
+          <span style="color:var(--red)">-${fmt(r.gastos)}</span>
+          <span style="color:var(--blue)">${r.invertido>0?'-'+fmt(r.invertido):'—'}</span>
+          <span style="font-weight:600;color:${r.fimaFinal>=0?'var(--green)':'var(--red)'}">${fmt(r.fimaFinal)}</span>
+        </div>`).join('')}
+    </div>`:'<div class="empty" style="padding:20px 0">Sin movimientos registrados todavía</div>'}
+  `;
   document.getElementById('modal-actions').innerHTML=`<button class="modal-btn primary" onclick="cerrarModal()">Cerrar</button>`;
   document.getElementById('modal-overlay').classList.add('show');
 }
@@ -795,7 +859,7 @@ async function cargarMercado(){
 
 // ── SALDO INICIAL ─────────────────────────────────────────────────
 function editarSaldoInicial(){
-  const nuevo=prompt(`Saldo inicial (plata que tenías antes de empezar a usar la app)\nActual: ${fmt(saldoInicial)}\n\nIngresá el monto en ARS:`);
+  const nuevo=prompt(`Saldo inicial FIMA\nEs la plata que ya tenías en el FIMA antes de arrancar con la app.\nActual: ${fmt(saldoInicial)}\n\nIngresá el monto en ARS:`);
   if(nuevo===null)return;
   const monto=parseFloat(nuevo.replace(/\./g,'').replace(',','.'));
   if(isNaN(monto))return;
