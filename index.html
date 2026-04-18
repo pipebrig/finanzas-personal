@@ -282,13 +282,19 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
         <div class="big-card-sub">Ingresos − Gastos − Invertido</div>
       </div>
       <div class="stats-grid">
-        <div class="stat-card"><div class="stat-label">Ingresos</div><div class="stat-value green" id="dash-ingresos">$ 0</div></div>
-        <div class="stat-card">
-          <div class="stat-label">Gastos</div>
+        <div class="stat-card" onclick="abrirDetalleMes('ingreso')" style="cursor:pointer">
+          <div class="stat-label">Ingresos ›</div>
+          <div class="stat-value green" id="dash-ingresos">$ 0</div>
+        </div>
+        <div class="stat-card" onclick="abrirDetalleMes('gasto')" style="cursor:pointer">
+          <div class="stat-label">Gastos ›</div>
           <div class="stat-value red" id="dash-gastos">$ 0</div>
           <div style="font-size:11px;color:var(--muted);margin-top:4px" id="dash-gastos-sub"></div>
         </div>
-        <div class="stat-card"><div class="stat-label">Invertido</div><div class="stat-value blue" id="dash-invertido">$ 0</div></div>
+        <div class="stat-card" onclick="abrirDetalleMes('inversion')" style="cursor:pointer">
+          <div class="stat-label">Invertido ›</div>
+          <div class="stat-value blue" id="dash-invertido">$ 0</div>
+        </div>
         <div class="stat-card"><div class="stat-label">Balance</div><div class="stat-value" id="dash-balance">$ 0</div></div>
       </div>
       <button class="global-btn" onclick="abrirGlobal()">
@@ -1220,6 +1226,40 @@ async function guardarMovimiento(){
     renderDashboard();renderInversiones();renderHistorial();renderReporte();
   }catch(e){showToast('Error al guardar. Intentá de nuevo.','error');console.error(e);}
   btn.disabled=false;btn.textContent='Guardar';
+}
+
+function abrirDetalleMes(tipo){
+  const mes=mesKey(mesActual);
+  const txs=txDelMes(mes).filter(t=>t.tipo===tipo);
+  const titulos={gasto:'Gastos',ingreso:'Ingresos',inversion:'Inversiones'};
+  const colores={gasto:'var(--red)',ingreso:'var(--green)',inversion:'var(--blue)'};
+  const total=txs.reduce((s,t)=>s+t.monto,0);
+
+  document.getElementById('modal-title').textContent=titulos[tipo]+' — '+mesNombre(mesActual);
+  document.getElementById('modal-content').innerHTML=`
+    <div style="font-family:'DM Serif Display',serif;font-size:32px;color:${colores[tipo]};margin-bottom:16px">${fmt(total)}</div>
+    ${txs.length===0
+      ?'<div class="empty" style="padding:20px 0">Sin movimientos este mes</div>'
+      :[...txs].reverse().map(t=>{
+        const icons={gasto:'↓',ingreso:'↑',inversion:'◎'};
+        const bgs={gasto:'var(--red-dim)',ingreso:'var(--green-dim)',inversion:'var(--blue-dim)'};
+        const label=tipo==='gasto'?(t.cat&&t.cat!==t.desc?`${t.cat} — ${t.desc}`:t.desc||t.cat):tipo==='inversion'?`${t.desc} (${t.invTipo})`:t.desc;
+        const sub=tipo==='gasto'?t.medio:tipo==='inversion'?(t.invMov==='Retiro'?'Retiro':'Aporte'):'';
+        const cuotaBadge=parseInt(t.cuotas)>1?`<span class="badge">${t.cuotas}c</span>`:'';
+        return`<div class="tx-item">
+          <div class="tx-icon" style="background:${bgs[tipo]}">${icons[tipo]}</div>
+          <div class="tx-info">
+            <div class="tx-desc">${label}${cuotaBadge}</div>
+            <div class="tx-meta">${t.fecha}${sub?' · '+sub:''}</div>
+          </div>
+          <div class="tx-right">
+            <div class="tx-amount" style="color:${colores[tipo]}">${tipo==='ingreso'?'+':''}${fmt(t.monto,t.moneda)}</div>
+          </div>
+        </div>`;
+      }).join('')
+    }`;
+  document.getElementById('modal-actions').innerHTML=`<button class="modal-btn primary" onclick="cerrarModal()">Cerrar</button>`;
+  document.getElementById('modal-overlay').classList.add('show');
 }
 
 // ── EDITAR / ELIMINAR ─────────────────────────────────────────────
