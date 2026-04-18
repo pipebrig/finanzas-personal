@@ -199,11 +199,11 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
     <div class="auth-logo">Finanzas</div>
     <div class="auth-sub">Personal</div>
   </div>
-  <button class="btn-google" onclick="signIn()">
+  <button class="btn-google" id="btn-google" onclick="signIn()" disabled style="opacity:0.5">
     <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z"/><path fill="#FBBC05" d="M3.964 10.707A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.961L3.964 6.293C4.672 4.166 6.656 3.58 9 3.58z"/></svg>
     Continuar con Google
   </button>
-  <div class="auth-note">Tus datos quedan en tu propia Google Sheet, nadie más puede verlos.</div>
+  <div id="auth-status" style="font-size:12px;color:var(--muted)">Cargando...</div>
 </div>
 
 <div id="app">
@@ -565,57 +565,72 @@ let invPortfolios=new Set(),dolarCache=1000;
 let saldoInicial=parseFloat(localStorage.getItem('fp_saldo_inicial')||'0');
 
 // ── AUTH ──────────────────────────────────────────────────────────
+function setAuthStatus(msg,ready=false){
+  const btn=document.getElementById('btn-google');
+  const status=document.getElementById('auth-status');
+  if(btn){btn.disabled=!ready;btn.style.opacity=ready?'1':'0.5';}
+  if(status)status.textContent=msg;
+}
+
 function initGoogleAuth(){
+  setAuthStatus('Conectando con Google...',false);
   const s=document.createElement('script');
   s.src='https://accounts.google.com/gsi/client';
+  s.onerror=()=>{
+    setAuthStatus('Error al cargar Google. Verificá tu conexión y recargá.',false);
+  };
   s.onload=()=>{
-    tokenClient=google.accounts.oauth2.initTokenClient({
-      client_id:CLIENT_ID,scope:SCOPES,
-      callback:async(resp)=>{
-        if(resp.error)return;
-        accessToken=resp.access_token;
-        // Guardar token y expiración
-        const expiry=Date.now()+(55*60*1000); // 55 minutos
-        try{
-          const r=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+accessToken}});
-          const u=await r.json();
-          localStorage.setItem('fp_email',u.email);
-        }catch(e){}
-        localStorage.setItem('fp_token',accessToken);
-        localStorage.setItem('fp_token_expiry',expiry.toString());
-        entrarApp();
-      }
-    });
-
-    // Intentar usar token guardado primero
-    const savedToken=localStorage.getItem('fp_token');
-    const savedExpiry=parseInt(localStorage.getItem('fp_token_expiry')||'0');
-    const savedEmail=localStorage.getItem('fp_email');
-
-    if(savedToken&&savedExpiry>Date.now()+60000){
-      // Token todavía válido — entrar directo sin pedir login
-      accessToken=savedToken;
-      entrarApp();
-    } else if(savedEmail){
-      // Token vencido pero tenemos email — renovar silencioso
-      const sc=google.accounts.oauth2.initTokenClient({
-        client_id:CLIENT_ID,scope:SCOPES,prompt:'none',login_hint:savedEmail,
+    try{
+      tokenClient=google.accounts.oauth2.initTokenClient({
+        client_id:CLIENT_ID,scope:SCOPES,
         callback:async(resp)=>{
-          if(resp.error){
-            // Si falla el silencioso, mostrar pantalla login
-            document.getElementById('auth-screen').style.display='flex';
-            return;
-          }
+          if(resp.error){setAuthStatus('Error al iniciar sesión. Intentá de nuevo.',true);return;}
           accessToken=resp.access_token;
           const expiry=Date.now()+(55*60*1000);
+          try{
+            const r=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+accessToken}});
+            const u=await r.json();
+            localStorage.setItem('fp_email',u.email);
+          }catch(e){}
           localStorage.setItem('fp_token',accessToken);
           localStorage.setItem('fp_token_expiry',expiry.toString());
           entrarApp();
         }
       });
-      sc.requestAccessToken();
-    } else {
-      document.getElementById('auth-screen').style.display='flex';
+
+      // Intentar token guardado
+      const savedToken=localStorage.getItem('fp_token');
+      const savedExpiry=parseInt(localStorage.getItem('fp_token_expiry')||'0');
+      const savedEmail=localStorage.getItem('fp_email');
+
+      if(savedToken&&savedExpiry>Date.now()+60000){
+        accessToken=savedToken;
+        entrarApp();
+        return;
+      }
+
+      if(savedEmail){
+        setAuthStatus('Renovando sesión...',false);
+        const sc=google.accounts.oauth2.initTokenClient({
+          client_id:CLIENT_ID,scope:SCOPES,prompt:'none',login_hint:savedEmail,
+          callback:async(resp)=>{
+            if(resp.error){
+              setAuthStatus('Tocá el botón para ingresar',true);
+              return;
+            }
+            accessToken=resp.access_token;
+            const expiry=Date.now()+(55*60*1000);
+            localStorage.setItem('fp_token',accessToken);
+            localStorage.setItem('fp_token_expiry',expiry.toString());
+            entrarApp();
+          }
+        });
+        sc.requestAccessToken();
+      } else {
+        setAuthStatus('Tocá el botón para ingresar',true);
+      }
+    }catch(e){
+      setAuthStatus('Error inesperado. Recargá la página.',false);
     }
   };
   document.head.appendChild(s);
@@ -643,7 +658,10 @@ async function entrarApp(){
     rc.requestAccessToken();
   },50*60*1000);
 }
-function signIn(){tokenClient.requestAccessToken();}
+function signIn(){
+  if(!tokenClient){setAuthStatus('Todavía cargando, esperá un momento...',false);return;}
+  tokenClient.requestAccessToken();
+}
 function signOut(){
   accessToken=null;
   localStorage.removeItem('fp_email');
