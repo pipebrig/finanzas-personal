@@ -573,33 +573,43 @@ function setAuthStatus(msg,ready=false){
 }
 
 function initGoogleAuth(){
-  setAuthStatus('Conectando...', false);
-
-  // Si Google ya cargó (por caché), arrancamos directo
-  if(typeof google!=='undefined'&&google.accounts){
-    setupTokenClient();
+  // Si hay token válido guardado, entrar directo sin esperar Google
+  const savedToken=localStorage.getItem('fp_token');
+  const savedExpiry=parseInt(localStorage.getItem('fp_token_expiry')||'0');
+  if(savedToken&&savedExpiry>Date.now()+60000){
+    accessToken=savedToken;
+    entrarApp();
+    // Cargar Google en background para renovar luego
+    cargarScriptGoogle(false);
     return;
   }
+  // Sin token válido — mostrar botón
+  setAuthStatus('Cargando...',false);
+  cargarScriptGoogle(true);
+}
 
+function cargarScriptGoogle(mostrarBoton){
+  if(typeof google!=='undefined'&&google.accounts){
+    setupTokenClient(mostrarBoton);
+    return;
+  }
   const s=document.createElement('script');
   s.src='https://accounts.google.com/gsi/client';
   s.async=true;
-  s.defer=true;
-  s.onerror=()=>{ setAuthStatus('Sin conexión. Verificá internet y recargá.',false); };
-  s.onload=()=>{ setupTokenClient(); };
+  s.onerror=()=>{
+    if(mostrarBoton)setAuthStatus('Sin conexión. Verificá internet y recargá.',false);
+  };
+  s.onload=()=>setupTokenClient(mostrarBoton);
+  // Si en 5 seg no cargó el script, mostrar botón igual
+  if(mostrarBoton){
+    setTimeout(()=>{
+      if(!tokenClient)setAuthStatus('Tocá el botón para ingresar',true);
+    },5000);
+  }
   document.head.appendChild(s);
-
-  // Fallback: si en 8 segundos no cargó, revisar si google existe igual
-  setTimeout(()=>{
-    if(typeof google!=='undefined'&&google.accounts&&!tokenClient){
-      setupTokenClient();
-    } else if(!tokenClient){
-      setAuthStatus('Sin conexión. Verificá internet y recargá.',false);
-    }
-  },8000);
 }
 
-function setupTokenClient(){
+function setupTokenClient(mostrarBoton){
   try{
     tokenClient=google.accounts.oauth2.initTokenClient({
       client_id:CLIENT_ID,scope:SCOPES,
@@ -617,40 +627,9 @@ function setupTokenClient(){
         entrarApp();
       }
     });
-
-    const savedToken=localStorage.getItem('fp_token');
-    const savedExpiry=parseInt(localStorage.getItem('fp_token_expiry')||'0');
-    const savedEmail=localStorage.getItem('fp_email');
-
-    if(savedToken&&savedExpiry>Date.now()+60000){
-      accessToken=savedToken;
-      entrarApp();
-      return;
-    }
-
-    if(savedEmail){
-      setAuthStatus('Renovando sesión...',false);
-      const sc=google.accounts.oauth2.initTokenClient({
-        client_id:CLIENT_ID,scope:SCOPES,prompt:'none',login_hint:savedEmail,
-        callback:async(resp)=>{
-          if(resp.error){
-            setAuthStatus('Tocá el botón para ingresar',true);
-            return;
-          }
-          accessToken=resp.access_token;
-          const expiry=Date.now()+(55*60*1000);
-          localStorage.setItem('fp_token',accessToken);
-          localStorage.setItem('fp_token_expiry',expiry.toString());
-          entrarApp();
-        }
-      });
-      sc.requestAccessToken();
-    } else {
-      setAuthStatus('Tocá el botón para ingresar',true);
-    }
+    if(mostrarBoton)setAuthStatus('Tocá el botón para ingresar',true);
   }catch(e){
-    setAuthStatus('Error inesperado. Recargá la página.',false);
-    console.error(e);
+    if(mostrarBoton)setAuthStatus('Error. Recargá la página.',false);
   }
 }
 
@@ -659,21 +638,22 @@ async function entrarApp(){
   document.getElementById('app').style.display='block';
   actualizarSaldoDisplay();
   await initSheet();await cargarTodo();
-  // Renovar token automáticamente cada 50 minutos
-  setInterval(async()=>{
-    const saved=localStorage.getItem('fp_email');if(!saved)return;
-    const rc=google.accounts.oauth2.initTokenClient({
-      client_id:CLIENT_ID,scope:SCOPES,prompt:'none',login_hint:saved,
-      callback:(r)=>{
-        if(!r.error){
-          accessToken=r.access_token;
-          const expiry=Date.now()+(55*60*1000);
-          localStorage.setItem('fp_token',accessToken);
-          localStorage.setItem('fp_token_expiry',expiry.toString());
+  // Renovar token cada 50 min si tokenClient está disponible
+  setInterval(()=>{
+    if(tokenClient){
+      const saved=localStorage.getItem('fp_email');if(!saved)return;
+      const rc=google.accounts.oauth2.initTokenClient({
+        client_id:CLIENT_ID,scope:SCOPES,prompt:'none',login_hint:saved,
+        callback:(r)=>{
+          if(!r.error){
+            accessToken=r.access_token;
+            localStorage.setItem('fp_token',accessToken);
+            localStorage.setItem('fp_token_expiry',(Date.now()+(55*60*1000)).toString());
+          }
         }
-      }
-    });
-    rc.requestAccessToken();
+      });
+      rc.requestAccessToken();
+    }
   },50*60*1000);
 }
 function signIn(){
