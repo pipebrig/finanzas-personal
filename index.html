@@ -418,14 +418,14 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
           <input class="form-input other-input show" id="f-inv-nombre" type="text" placeholder="Ej: S&P 500, AAPL, Plazo abril...">
         </div>
         <div class="form-group">
-          <label class="form-label">Destino</label>
-          <select class="form-select" id="f-inv-destino" onchange="toggleOtro('f-inv-destino','otro-inv-destino')">
-            <option value="">— Sin destino específico —</option>
-            <option>Jubilación</option><option>Ahorro</option><option>Viaje</option>
-            <option>Emergencia</option><option>Corto plazo</option><option>Largo plazo</option>
-            <option value="__otro__">Otro (escribir)</option>
+          <label class="form-label">Proyecto asociado (opcional)</label>
+          <select class="form-select" id="f-inv-proyecto">
+            <option value="">— Sin proyecto específico —</option>
           </select>
-          <input class="form-input other-input" id="otro-inv-destino" type="text" placeholder="Escribí el destino">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Destino / Nota</label>
+          <input class="form-input" id="f-inv-destino" type="text" placeholder="Jubilación, Ahorro, Viaje...">
         </div>
         <div class="form-group">
           <label class="form-label">Movimiento</label>
@@ -435,9 +435,16 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
           </select>
         </div>
         <div class="form-row">
-          <div class="form-group"><label class="form-label">Monto (ARS)</label><input class="form-input" id="f-monto-inversion" type="number" inputmode="decimal" placeholder="0.00" step="0.01"></div>
-          <div class="form-group"><label class="form-label">Fecha</label><input class="form-input" id="f-fecha-inversion" type="date"></div>
+          <div class="form-group"><label class="form-label">Monto</label><input class="form-input" id="f-monto-inversion" type="number" inputmode="decimal" placeholder="0.00" step="0.01"></div>
+          <div class="form-group"><label class="form-label">Moneda</label>
+            <select class="form-select" id="f-moneda-inversion" onchange="actualizarEquivalente()">
+              <option value="ARS">ARS $</option>
+              <option value="USD">USD U$S</option>
+            </select>
+          </div>
         </div>
+        <div id="equivalente-inv" style="font-size:12px;color:var(--muted);margin-top:-8px;margin-bottom:8px;padding:0 2px"></div>
+        <div class="form-group"><label class="form-label">Fecha</label><input class="form-input" id="f-fecha-inversion" type="date"></div>
         <div class="form-group"><label class="form-label">Nota (opcional)</label><input class="form-input" id="f-nota-inversion" type="text" placeholder="Detalle adicional"></div>
       </div>
 
@@ -730,7 +737,7 @@ async function initSheet(){
   if(toCreate.length>0){
     await sheetsBatch(toCreate.map(title=>({addSheet:{properties:{title}}})));
     await sheetsUpdate('Transacciones!A1:J1',[['Fecha','Tipo','Categoría','Descripción','Monto','Moneda','Medio','Cuotas','Tipo gasto','ID']]);
-    await sheetsUpdate('Inversiones!A1:H1',[['Fecha','Tipo','Portfolio','Destino','Movimiento','Monto ARS','Nota','ID']]);
+    await sheetsUpdate('Inversiones!A1:J1',[['Fecha','Tipo','Portfolio','Destino','Movimiento','Monto ARS','Moneda','Monto Original','Proyecto','ID']]);
     await sheetsUpdate('Presupuesto!A1:C1',[['Mes','Categoría','Límite']]);
     await sheetsUpdate('Gastos!A1:I1',[['Fecha','Categoría','Descripción','Monto','Moneda','Medio','Cuotas','Tipo gasto','ID']]);
     await sheetsUpdate('Cobros!A1:G1',[['ID','Descripción','Monto','Moneda','Fecha estimada pago','Nota','Estado']]);
@@ -784,7 +791,7 @@ async function cargarTransacciones(){
     if(!r[0])return;
     const portfolio=r[2]||'';
     invPortfolios.add(portfolio);
-    txCache.push({rowIndex:i+2,id:r[7]||'',fecha:r[0],tipo:'inversion',invTipo:r[1]||'',desc:portfolio,cat:'',invDestino:r[3]||'',invMov:r[4]||'Aporte',monto:parseFloat(r[5])||0,moneda:'ARS',medio:'',cuotas:'1',nota:r[6]||'',sheet:'Inversiones'});
+    txCache.push({rowIndex:i+2,id:r[9]||r[7]||'',fecha:r[0],tipo:'inversion',invTipo:r[1]||'',desc:portfolio,cat:'',invDestino:r[3]||'',invMov:r[4]||'Aporte',monto:parseFloat(r[5])||0,moneda:r[6]||'ARS',montoOriginal:parseFloat(r[7])||0,invProyecto:r[8]||'',nota:'',sheet:'Inversiones'});
   });
   // Update portfolio selector
   const sel=document.getElementById('f-inv-nombre-sel');
@@ -1117,6 +1124,20 @@ function toggleInvNombre(){
   else{inp.classList.remove('show');inp.value=sel.value;}
 }
 
+function actualizarEquivalente(){
+  const monto=parseFloat(document.getElementById('f-monto-inversion').value)||0;
+  const moneda=document.getElementById('f-moneda-inversion').value;
+  const el=document.getElementById('equivalente-inv');
+  if(!el||!monto)return;
+  if(moneda==='USD'&&dolarCache>0){
+    el.textContent=`≈ $ ${(monto*dolarCache).toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0})} ARS al dólar oficial Galicia`;
+  } else if(moneda==='ARS'&&dolarCache>0){
+    el.textContent=`≈ U$S ${(monto/dolarCache).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})} al dólar oficial Galicia`;
+  } else {
+    el.textContent='';
+  }
+}
+
 function mostrarCuotas(){
   const medio=document.getElementById('f-medio').value;
   const esTarjeta=['Visa','Mastercard','Visa Pili','Visa Papa'].includes(medio);
@@ -1177,19 +1198,23 @@ async function guardarMovimiento(){
       const tipo=getSelectOrOtro('f-inv-tipo','otro-inv-tipo');
       const sel=document.getElementById('f-inv-nombre-sel');
       const nombre=sel.value==='__nuevo__'?document.getElementById('f-inv-nombre').value.trim():sel.value;
-      const destino=getSelectOrOtro('f-inv-destino','otro-inv-destino');
+      const destino=document.getElementById('f-inv-destino').value.trim();
       const mov=document.getElementById('f-inv-mov').value;
-      const monto=parseFloat(document.getElementById('f-monto-inversion').value);
+      const montoOriginal=parseFloat(document.getElementById('f-monto-inversion').value);
+      const moneda=document.getElementById('f-moneda-inversion').value;
       const fecha=document.getElementById('f-fecha-inversion').value;
       const nota=document.getElementById('f-nota-inversion').value.trim();
-      if(!tipo||!nombre||!monto||!fecha){showToast('Completá tipo, nombre, monto y fecha','error');btn.disabled=false;btn.textContent='Guardar';return;}
+      const proyectoId=document.getElementById('f-inv-proyecto').value;
+      if(!tipo||!nombre||!montoOriginal||!fecha){showToast('Completá tipo, nombre, monto y fecha','error');btn.disabled=false;btn.textContent='Guardar';return;}
+      // Convertir a ARS si es USD
+      const montoARS=moneda==='USD'?montoOriginal*dolarCache:montoOriginal;
       const id=genId();
-      await sheetsAppend('Inversiones!A:H',[[fecha,tipo,nombre,destino,mov,monto,nota,id]]);
+      await sheetsAppend('Inversiones!A:J',[[fecha,tipo,nombre,destino,mov,montoARS,moneda,montoOriginal,proyectoId,id]]);
       invPortfolios.add(nombre);
       const nomSel=document.getElementById('f-inv-nombre-sel');
       nomSel.innerHTML='<option value="__nuevo__">+ Nuevo portfolio</option>'+[...invPortfolios].map(p=>`<option value="${p}">${p}</option>`).join('');
       showToast('Inversión guardada','success');
-      document.getElementById('f-inv-tipo').value='';document.getElementById('f-inv-nombre-sel').value='__nuevo__';document.getElementById('f-inv-nombre').value='';document.getElementById('f-inv-destino').value='';document.getElementById('f-monto-inversion').value='';document.getElementById('f-nota-inversion').value='';document.getElementById('otro-inv-tipo').classList.remove('show');document.getElementById('otro-inv-destino').classList.remove('show');
+      document.getElementById('f-inv-tipo').value='';document.getElementById('f-inv-nombre-sel').value='__nuevo__';document.getElementById('f-inv-nombre').value='';document.getElementById('f-inv-destino').value='';document.getElementById('f-monto-inversion').value='';document.getElementById('f-moneda-inversion').value='ARS';document.getElementById('f-nota-inversion').value='';document.getElementById('equivalente-inv').textContent='';document.getElementById('otro-inv-tipo').classList.remove('show');
     }
     await cargarTransacciones();
     renderDashboard();renderInversiones();renderHistorial();renderReporte();
@@ -1493,6 +1518,25 @@ async function cargarProyectos(){
     });
   });
 
+  // Calcular inversiones asignadas a cada proyecto
+  proyectosCache.forEach(p=>{
+    const invs=txCache.filter(t=>t.tipo==='inversion'&&t.invProyecto===p.id);
+    p.totalInvertidoARS=invs.filter(t=>t.invMov!=='Retiro').reduce((s,t)=>s+t.monto,0);
+    p.totalInvertidoARS-=invs.filter(t=>t.invMov==='Retiro').reduce((s,t)=>s+t.monto,0);
+    // En USD: inversiones que se hicieron en USD
+    const invsUSD=invs.filter(t=>t.moneda==='USD'&&t.invMov!=='Retiro');
+    p.totalInvertidoUSD=invsUSD.reduce((s,t)=>s+(t.montoOriginal||t.monto/dolarCache),0);
+  });
+
+  // Actualizar selector de proyecto en formulario de inversión
+  const sel=document.getElementById('f-inv-proyecto');
+  if(sel){
+    const current=sel.value;
+    sel.innerHTML='<option value="">— Sin proyecto específico —</option>'+
+      proyectosCache.filter(p=>p.estado==='activo').map(p=>`<option value="${p.id}">${p.nombre}</option>`).join('');
+    sel.value=current;
+  }
+
   renderProyectos();
 }
 
@@ -1536,8 +1580,14 @@ function renderProyectos(){
 function proyectoCard(p){
   const total=p.items.reduce((s,it)=>s+it.precio,0);
   const confirmado=p.items.filter(it=>it.estado==='confirmado').reduce((s,it)=>s+it.precio,0);
-  const pct=total>0?Math.min((confirmado/total)*100,100):0;
+  const cotizadoPct=total>0?Math.min((confirmado/total)*100,100):0;
   const pendientesCot=p.items.filter(it=>it.estado==='pendiente').length;
+
+  // Progreso de inversión
+  const invertido=p.totalInvertidoARS||0;
+  const invertidoUSD=p.totalInvertidoUSD||0;
+  const pctInv=total>0?Math.min((invertido/total)*100,100):0;
+  const falta=Math.max(total-invertido,0);
 
   // Plan de ahorro
   let planHtml='';
@@ -1545,12 +1595,12 @@ function proyectoCard(p){
     const hoy=new Date();
     const objetivo=new Date(p.fechaObjetivo+'T12:00:00');
     const mesesRestantes=Math.max(1,Math.ceil((objetivo-hoy)/(1000*60*60*24*30)));
-    const porMes=total/mesesRestantes;
+    const porMes=falta/mesesRestantes;
     planHtml=`
       <div class="plan-ahorro">
-        <div class="plan-ahorro-label">Plan de ahorro sugerido</div>
+        <div class="plan-ahorro-label">Para llegar a tiempo</div>
         <div class="plan-ahorro-valor">${fmt(porMes)}/mes</div>
-        <div class="plan-ahorro-sub">Para llegar a ${fmt(total)} antes del ${new Date(p.fechaObjetivo+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})} (${mesesRestantes} meses)</div>
+        <div class="plan-ahorro-sub">${mesesRestantes} meses hasta ${new Date(p.fechaObjetivo+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'short',year:'numeric'})}</div>
       </div>`;
   }
 
@@ -1558,15 +1608,26 @@ function proyectoCard(p){
     <div class="proyecto-card" onclick="abrirDetalleProyecto('${p.id}')">
       <div class="proyecto-nombre">${p.nombre}</div>
       <div class="proyecto-cat">${p.categoria||'Sin categoría'}${p.fechaObjetivo?' · Objetivo: '+new Date(p.fechaObjetivo+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'short',year:'numeric'}):''}</div>
+
+      <div style="margin:10px 0 4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">Presupuesto estimado</div>
       <div class="proyecto-total">${fmt(total)}</div>
       <div style="font-size:12px;color:var(--muted)">${p.items.length} ítem${p.items.length!==1?'s':''}${pendientesCot>0?' · '+pendientesCot+' sin cotizar':''}</div>
-      <div class="proyecto-progress-bg">
-        <div class="proyecto-progress-fill" style="width:${pct}%;background:${pct>=100?'var(--green)':pct>50?'var(--amber)':'var(--blue)'}"></div>
-      </div>
-      <div class="proyecto-meta">
-        <span>${Math.round(pct)}% cotizado</span>
-        <span>${fmt(confirmado)} confirmado</span>
-      </div>
+
+      ${total>0?`
+      <div style="margin:14px 0 6px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">
+          <span style="color:var(--muted)">Progreso de inversión</span>
+          <span style="font-weight:600;color:${pctInv>=100?'var(--green)':pctInv>50?'var(--amber)':'var(--blue)'}">${Math.round(pctInv)}%</span>
+        </div>
+        <div class="proyecto-progress-bg">
+          <div class="proyecto-progress-fill" style="width:${pctInv}%;background:${pctInv>=100?'var(--green)':pctInv>50?'var(--amber)':'var(--blue)'}"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:6px">
+          <span style="color:var(--blue)">Invertido: ${fmt(invertido)}${invertidoUSD>0?' (U$S '+invertidoUSD.toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0})+')':''}</span>
+          <span style="color:var(--muted)">Falta: ${fmt(falta)}</span>
+        </div>
+      </div>`:''}
+
       ${planHtml}
     </div>`;
 }
@@ -1579,6 +1640,14 @@ function abrirDetalleProyecto(id){
   const confirmado=p.items.filter(it=>it.estado==='confirmado').reduce((s,it)=>s+it.precio,0);
   const cotizado=p.items.filter(it=>it.estado==='cotizado').reduce((s,it)=>s+it.precio,0);
   const sinCotizar=p.items.filter(it=>it.estado==='pendiente').reduce((s,it)=>s+it.precio,0);
+  const invertido=p.totalInvertidoARS||0;
+  const invertidoUSD=p.totalInvertidoUSD||0;
+  const pctInv=total>0?Math.min((invertido/total)*100,100):0;
+  const falta=Math.max(total-invertido,0);
+  const faltaUSD=dolarCache>0?falta/dolarCache:0;
+
+  // Inversiones asignadas a este proyecto
+  const invsProyecto=txCache.filter(t=>t.tipo==='inversion'&&t.invProyecto===id);
 
   // Plan ahorro
   let planHtml='';
@@ -1586,24 +1655,59 @@ function abrirDetalleProyecto(id){
     const hoy=new Date();
     const objetivo=new Date(p.fechaObjetivo+'T12:00:00');
     const mesesRestantes=Math.max(1,Math.ceil((objetivo-hoy)/(1000*60*60*24*30)));
-    const porMes=total/mesesRestantes;
+    const porMes=falta/mesesRestantes;
     planHtml=`
       <div class="plan-ahorro" style="margin-bottom:14px">
         <div class="plan-ahorro-label">Para llegar a tiempo necesitás ahorrar</div>
         <div class="plan-ahorro-valor">${fmt(porMes)}/mes</div>
-        <div class="plan-ahorro-sub">${mesesRestantes} meses restantes hasta ${new Date(p.fechaObjetivo+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long'})}</div>
+        <div class="plan-ahorro-sub">${mesesRestantes} meses restantes · Falta ${fmt(falta)} (U$S ${faltaUSD.toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0})})</div>
       </div>`;
   }
 
   document.getElementById('modal-title').textContent=p.nombre;
   document.getElementById('modal-content').innerHTML=`
-    <!-- Totales -->
+    <!-- Presupuesto -->
     <div class="stats-grid" style="margin-bottom:12px">
       <div class="stat-card"><div class="stat-label">Total estimado</div><div class="stat-value amber">${fmt(total)}</div></div>
       <div class="stat-card"><div class="stat-label">Confirmado</div><div class="stat-value green">${fmt(confirmado)}</div></div>
       <div class="stat-card"><div class="stat-label">Cotizado</div><div class="stat-value" style="color:var(--amber)">${fmt(cotizado)}</div></div>
       <div class="stat-card"><div class="stat-label">Sin cotizar</div><div class="stat-value" style="color:var(--muted)">${fmt(sinCotizar)}</div></div>
     </div>
+
+    <!-- Progreso de inversión -->
+    ${total>0?`
+    <div class="list-card" style="margin-bottom:12px">
+      <div class="list-card-title">Progreso de inversión</div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+        <div>
+          <div style="font-family:'DM Serif Display',serif;font-size:28px;color:var(--blue)">${fmt(invertido)}</div>
+          ${invertidoUSD>0?`<div style="font-size:12px;color:var(--muted)">U$S ${invertidoUSD.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})} · dólar oficial Galicia</div>`:''}
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:28px;font-weight:700;color:${pctInv>=100?'var(--green)':pctInv>50?'var(--amber)':'var(--blue)'}">${Math.round(pctInv)}%</div>
+          <div style="font-size:12px;color:var(--muted)">del total</div>
+        </div>
+      </div>
+      <div class="proyecto-progress-bg" style="height:8px;margin-bottom:8px">
+        <div class="proyecto-progress-fill" style="width:${pctInv}%;height:8px;background:${pctInv>=100?'var(--green)':pctInv>50?'var(--amber)':'var(--blue)'}"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)">
+        <span>Invertido: ${fmt(invertido)}</span>
+        <span>Falta: ${fmt(falta)} ${faltaUSD>0?'(U$S '+faltaUSD.toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0})+')':''}</span>
+      </div>
+      ${invsProyecto.length>0?`
+      <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Inversiones asignadas</div>
+        ${invsProyecto.map(inv=>`
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
+            <div>
+              <span style="font-weight:500">${inv.desc}</span>
+              <span style="color:var(--muted);font-size:11px"> · ${inv.invTipo} · ${inv.fecha}</span>
+            </div>
+            <span style="color:var(--blue);font-weight:600">${inv.moneda==='USD'?'U$S '+(inv.montoOriginal||0).toLocaleString('es-AR',{minimumFractionDigits:2}):''}  ${fmt(inv.monto)}</span>
+          </div>`).join('')}
+      </div>`:''}
+    </div>`:''}
 
     ${planHtml}
 
@@ -1770,6 +1874,9 @@ async function confirmarEliminarProyecto(id,rowIndex){
 ['f-fecha-gasto','f-fecha-ingreso','f-fecha-inversion','cobro-fecha'].forEach(id=>{
   const el=document.getElementById(id);if(el)el.value=new Date().toISOString().split('T')[0];
 });
+// Equivalente dólar en tiempo real
+const montoInvEl=document.getElementById('f-monto-inversion');
+if(montoInvEl)montoInvEl.addEventListener('input',actualizarEquivalente);
 setTipo('gasto',document.querySelector('.tipo-btn'));
 initGoogleAuth();
 </script>
