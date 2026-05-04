@@ -797,14 +797,14 @@ async function cargarTransacciones(){
   txCache=[];
   txRows.forEach((r,i)=>{
     if(!r[0])return;
-    txCache.push({rowIndex:i+2,id:r[9]||r[8]||'',fecha:r[0],tipo:r[1]||'gasto',cat:r[2]||'',desc:r[3]||'',monto:parseFloat(r[4])||0,moneda:r[5]||'ARS',medio:r[6]||'',cuotas:r[7]||'1',tipoGasto:r[8]||'Variable',sheet:'Transacciones'});
+    txCache.push({rowIndex:i+2,id:r[9]||r[8]||'',fecha:(r[0]+'').substring(0,10),tipo:r[1]||'gasto',cat:r[2]||'',desc:r[3]||'',monto:parseFloat(r[4])||0,moneda:r[5]||'ARS',medio:r[6]||'',cuotas:r[7]||'1',tipoGasto:r[8]||'Variable',sheet:'Transacciones'});
   });
   invPortfolios.clear();
   invRows.forEach((r,i)=>{
     if(!r[0])return;
     const portfolio=r[2]||'';
     invPortfolios.add(portfolio);
-    txCache.push({rowIndex:i+2,id:r[9]||r[7]||'',fecha:r[0],tipo:'inversion',invTipo:r[1]||'',desc:portfolio,cat:'',invDestino:r[3]||'',invMov:r[4]||'Aporte',monto:parseFloat(r[5])||0,moneda:r[6]||'ARS',montoOriginal:parseFloat(r[7])||0,invProyecto:r[8]||'',nota:'',sheet:'Inversiones'});
+    txCache.push({rowIndex:i+2,id:r[9]||r[7]||'',fecha:(r[0]+'').substring(0,10),tipo:'inversion',invTipo:r[1]||'',desc:portfolio,cat:'',invDestino:r[3]||'',invMov:r[4]||'Aporte',monto:parseFloat(r[5])||0,moneda:r[6]||'ARS',montoOriginal:parseFloat(r[7])||0,invProyecto:r[8]||'',nota:'',sheet:'Inversiones'});
   });
   // Update portfolio selector
   const sel=document.getElementById('f-inv-nombre-sel');
