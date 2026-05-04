@@ -1230,6 +1230,8 @@ async function guardarMovimiento(){
       await sheetsAppend('Transacciones!A:J',[[fecha,'ingreso','',origen,monto,moneda,'','1','',id]]);
       showToast('Ingreso guardado','success');
       document.getElementById('f-origen').value='';document.getElementById('f-monto-ingreso').value='';document.getElementById('f-nota-ingreso').value='';document.getElementById('otro-origen').classList.remove('show');
+      await cargarTransacciones();
+      renderDashboard();renderHistorial();renderReporte();
     }else if(tipoActual==='inversion'){
       const tipo=getSelectOrOtro('f-inv-tipo','otro-inv-tipo');
       const sel=document.getElementById('f-inv-nombre-sel');
