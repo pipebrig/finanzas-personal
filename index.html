@@ -1230,8 +1230,6 @@ async function guardarMovimiento(){
       await sheetsAppend('Transacciones!A:J',[[fecha,'ingreso','',origen,monto,moneda,'','1','',id]]);
       showToast('Ingreso guardado','success');
       document.getElementById('f-origen').value='';document.getElementById('f-monto-ingreso').value='';document.getElementById('f-nota-ingreso').value='';document.getElementById('otro-origen').classList.remove('show');
-      await cargarTransacciones();
-      renderDashboard();renderHistorial();renderReporte();
     }else if(tipoActual==='inversion'){
       const tipo=getSelectOrOtro('f-inv-tipo','otro-inv-tipo');
       const sel=document.getElementById('f-inv-nombre-sel');
@@ -1255,7 +1253,8 @@ async function guardarMovimiento(){
       document.getElementById('f-inv-tipo').value='';document.getElementById('f-inv-nombre-sel').value='__nuevo__';document.getElementById('f-inv-nombre').value='';document.getElementById('f-inv-destino').value='';document.getElementById('f-monto-inversion').value='';document.getElementById('f-moneda-inversion').value='ARS';document.getElementById('f-nota-inversion').value='';document.getElementById('equivalente-inv').textContent='';document.getElementById('otro-inv-tipo').classList.remove('show');
     }
     await cargarTransacciones();
-    renderDashboard();renderInversiones();renderHistorial();renderReporte();
+    if(tipoActual==='inversion') await cargarProyectos();
+    renderDashboard();renderInversiones();renderHistorial();renderPresupuesto();renderReporte();
   }catch(e){showToast('Error al guardar. Intentá de nuevo.','error');console.error(e);}
   btn.disabled=false;btn.textContent='Guardar';
 }
