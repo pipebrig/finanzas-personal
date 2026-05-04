@@ -286,7 +286,7 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
       <div class="hero-card" onclick="openMonthDetail('disponible')">
         <div class="hero-label">Disponible este mes</div>
         <div class="hero-value green" id="d-disponible">$ 0,00</div>
-        <div class="hero-sub">Ingresos − gastos reales − invertido</div>
+        <div class="hero-sub" id="disponible-sub">Ingresos − gastos reales − invertido</div>
       </div>
       <div class="debt-card">
         <div class="debt-label">Deuda tarjeta acumulada</div>
@@ -410,8 +410,18 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
           </select>
           <input class="fi other-inp show" id="f-inv-portfolio-new" type="text" placeholder="Ej: S&P 500, Dólares, AAPL...">
         </div>
-        <div class="fg"><label class="fl">Destino (opcional)</label>
-          <input class="fi" id="f-inv-destino" type="text" placeholder="Ej: Jubilación, Viaje, Ahorro...">
+        <div class="fg"><label class="fl">Tipo de portfolio</label>
+          <select class="fs" id="f-inv-destino" onchange="toggleOther('f-inv-destino','f-inv-destino-otro')">
+            <option value="">— Sin categoría —</option>
+            <option value="Jubilación">Jubilación</option>
+            <option value="Ahorro">Ahorro</option>
+            <option value="Emergencia">Emergencia</option>
+            <option value="Corto plazo">Corto plazo</option>
+            <option value="Largo plazo">Largo plazo</option>
+            <option value="Viaje">Viaje</option>
+            <option value="__otro__">Otro (escribir)</option>
+          </select>
+          <input class="fi other-inp" id="f-inv-destino-otro" type="text" placeholder="Escribí el tipo de portfolio">
         </div>
         <div class="fg"><label class="fl">Proyecto vinculado (opcional)</label>
           <select class="fs" id="f-inv-proyecto"><option value="">— Sin proyecto —</option></select>
@@ -500,6 +510,14 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
       <div id="mercado-content"><div class="loading"><div class="spinner"></div>Cargando...</div></div>
       <div class="sec-title" style="margin-top:20px">Configuración</div>
       <div class="list-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+          <div><div style="font-size:14px">Inversiones en disponible mensual</div><div style="font-size:12px;color:var(--muted);margin-top:2px">Si está activo, las inversiones restan del disponible del mes</div></div>
+          <div onclick="toggleInvDisponible()" style="cursor:pointer">
+            <div id="toggle-inv" style="width:44px;height:24px;border-radius:12px;background:var(--blue);position:relative;transition:background .2s">
+              <div id="toggle-inv-dot" style="position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:right .2s"></div>
+            </div>
+          </div>
+        </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
           <div><div style="font-size:14px">Saldo inicial FIMA</div><div style="font-size:12px;color:var(--muted);margin-top:2px">Plata que tenías antes de arrancar la app</div></div>
           <button onclick="editSaldoInicial()" style="background:none;border:1px solid var(--border);color:var(--blue);padding:6px 14px;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer">Editar</button>
@@ -749,6 +767,7 @@ function startApp() {
   updateSaldoDisplay();
   updatePortfolioSelector();
   updateProjectSelector();
+  initToggle();
 
   renderAll();
   loadMercado();
@@ -782,12 +801,18 @@ function renderDashboard() {
   const aportes    = invs.filter(t=>t.mov!=='Retiro').reduce((s,t)=>s+t.montoARS,0);
   const retiros    = invs.filter(t=>t.mov==='Retiro').reduce((s,t)=>s+t.montoARS,0);
   const invertido  = aportes - retiros;
-  const disponible = ingresos - gastosReal - invertido;
-  const balance    = ingresos - gastos;
+  const disponible = invAfectaDisponible
+    ? ingresos - gastosReal - invertido
+    : ingresos - gastosReal;
+  const balance = ingresos - gastos;
 
   // Main cards
   el('d-disponible').textContent = fmt(disponible);
   el('d-disponible').className = 'hero-value ' + (disponible>=0?'green':'red');
+  const subDisp = el('disponible-sub');
+  if (subDisp) subDisp.textContent = invAfectaDisponible
+    ? 'Ingresos − gastos reales − invertido'
+    : 'Ingresos − gastos reales (sin contar inversiones)';
 
   el('d-deuda').textContent = fmt(deudaTarj);
   if (deudaTarj > 0) {
@@ -1341,7 +1366,7 @@ async function saveMovimiento() {
       const invTipo   = getVal('f-inv-tipo','f-inv-tipo-otro');
       const selPort   = el('f-inv-portfolio');
       const portfolio = selPort.value==='__new__' ? el('f-inv-portfolio-new').value.trim() : selPort.value;
-      const destino   = el('f-inv-destino').value.trim();
+      const destino   = getVal('f-inv-destino','f-inv-destino-otro');
       const proyId    = el('f-inv-proyecto').value;
       const mov       = el('f-inv-mov').value;
       const montoOrig = parseFloat(el('f-inv-monto').value);
@@ -1357,7 +1382,8 @@ async function saveMovimiento() {
       toast('Inversión guardada','ok');
       // Reset
       el('f-inv-tipo').value=''; el('f-inv-portfolio').value='__new__'; el('f-inv-portfolio-new').value='';
-      el('f-inv-destino').value=''; el('f-inv-monto').value=''; el('f-inv-nota').value='';
+      el('f-inv-destino').value=''; el('f-inv-destino-otro').classList.remove('show');
+      el('f-inv-monto').value=''; el('f-inv-nota').value='';
       el('f-inv-tipo-otro').classList.remove('show'); el('equiv-display').textContent='';
     }
 
@@ -1702,6 +1728,35 @@ function deleteProject(id) {
   renderProyectos();
   closeModal();
   toast('Proyecto eliminado','ok');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INVERSIONES EN DISPONIBLE TOGGLE
+// ═══════════════════════════════════════════════════════════════
+let invAfectaDisponible = localStorage.getItem('fp_inv_disponible') !== 'false';
+
+function initToggle() {
+  updateToggleUI();
+}
+
+function toggleInvDisponible() {
+  invAfectaDisponible = !invAfectaDisponible;
+  localStorage.setItem('fp_inv_disponible', invAfectaDisponible.toString());
+  updateToggleUI();
+  renderDashboard();
+}
+
+function updateToggleUI() {
+  const tog = el('toggle-inv');
+  const dot = el('toggle-inv-dot');
+  if (!tog||!dot) return;
+  if (invAfectaDisponible) {
+    tog.style.background = 'var(--blue)';
+    dot.style.right = '3px';
+  } else {
+    tog.style.background = 'var(--s3)';
+    dot.style.right = '23px';
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
