@@ -734,9 +734,9 @@ function signOut(){
 }
 
 // ── SHEETS ────────────────────────────────────────────────────────
-async function sheetsGet(range){const r=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(range)}`,{headers:{Authorization:'Bearer '+accessToken}});const d=await r.json();return d.values||[];}
-async function sheetsAppend(range,values){await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED`,{method:'POST',headers:{Authorization:'Bearer '+accessToken,'Content-Type':'application/json'},body:JSON.stringify({values})});}
-async function sheetsUpdate(range,values){await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,{method:'PUT',headers:{Authorization:'Bearer '+accessToken,'Content-Type':'application/json'},body:JSON.stringify({values})});}
+async function sheetsGet(range){const r=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(range)}?valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`,{headers:{Authorization:'Bearer '+accessToken}});const d=await r.json();return d.values||[];}
+async function sheetsAppend(range,values){await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW`,{method:'POST',headers:{Authorization:'Bearer '+accessToken,'Content-Type':'application/json'},body:JSON.stringify({values})});}
+async function sheetsUpdate(range,values){await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=RAW`,{method:'PUT',headers:{Authorization:'Bearer '+accessToken,'Content-Type':'application/json'},body:JSON.stringify({values})});}
 async function sheetsBatch(requests){await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}:batchUpdate`,{method:'POST',headers:{Authorization:'Bearer '+accessToken,'Content-Type':'application/json'},body:JSON.stringify({requests})});}
 async function sheetsClear(range){await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(range)}:clear`,{method:'POST',headers:{Authorization:'Bearer '+accessToken,'Content-Type':'application/json'}});}
 
@@ -760,6 +760,23 @@ async function initSheet(){
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────
+function parseFecha(val){
+  if(!val) return '';
+  const s = val+'';
+  // Already in YYYY-MM-DD format
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0,10);
+  // DD/MM/YYYY format
+  if(/^\d{2}\/\d{2}\/\d{4}/.test(s)){
+    const [d,m,y]=s.split('/');
+    return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  }
+  // Try as Date object
+  try{
+    const dt=new Date(val);
+    if(!isNaN(dt)) return dt.toISOString().substring(0,10);
+  }catch(e){}
+  return s.substring(0,10);
+}
 function mesKey(d){return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;}
 function mesNombre(d){return d.toLocaleDateString('es-AR',{month:'long',year:'numeric'});}
 function txDelMes(mes){return txCache.filter(t=>t.fecha.startsWith(mes));}
@@ -797,14 +814,14 @@ async function cargarTransacciones(){
   txCache=[];
   txRows.forEach((r,i)=>{
     if(!r[0])return;
-    txCache.push({rowIndex:i+2,id:r[9]||r[8]||'',fecha:(r[0]+'').substring(0,10),tipo:r[1]||'gasto',cat:r[2]||'',desc:r[3]||'',monto:parseFloat(r[4])||0,moneda:r[5]||'ARS',medio:r[6]||'',cuotas:r[7]||'1',tipoGasto:r[8]||'Variable',sheet:'Transacciones'});
+    txCache.push({rowIndex:i+2,id:r[9]||r[8]||'',fecha:parseFecha(r[0]),tipo:r[1]||'gasto',cat:r[2]||'',desc:r[3]||'',monto:parseFloat(r[4])||0,moneda:r[5]||'ARS',medio:r[6]||'',cuotas:r[7]||'1',tipoGasto:r[8]||'Variable',sheet:'Transacciones'});
   });
   invPortfolios.clear();
   invRows.forEach((r,i)=>{
     if(!r[0])return;
     const portfolio=r[2]||'';
     invPortfolios.add(portfolio);
-    txCache.push({rowIndex:i+2,id:r[9]||r[7]||'',fecha:(r[0]+'').substring(0,10),tipo:'inversion',invTipo:r[1]||'',desc:portfolio,cat:'',invDestino:r[3]||'',invMov:r[4]||'Aporte',monto:parseFloat(r[5])||0,moneda:r[6]||'ARS',montoOriginal:parseFloat(r[7])||0,invProyecto:r[8]||'',nota:'',sheet:'Inversiones'});
+    txCache.push({rowIndex:i+2,id:r[9]||r[7]||'',fecha:parseFecha(r[0]),tipo:'inversion',invTipo:r[1]||'',desc:portfolio,cat:'',invDestino:r[3]||'',invMov:r[4]||'Aporte',monto:parseFloat(r[5])||0,moneda:r[6]||'ARS',montoOriginal:parseFloat(r[7])||0,invProyecto:r[8]||'',nota:'',sheet:'Inversiones'});
   });
   // Update portfolio selector
   const sel=document.getElementById('f-inv-nombre-sel');
