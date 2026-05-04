@@ -276,10 +276,15 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
       <button class="month-btn" onclick="cambiarMes(1)">→</button>
     </div>
     <div class="sec-inner">
-      <div class="big-card">
+      <div class="big-card" onclick="abrirDetalleMes('gasto_tarjeta')" style="cursor:pointer">
         <div class="big-card-label">Disponible este mes</div>
         <div class="big-card-value green" id="dash-disponible">$ 0,00</div>
-        <div class="big-card-sub">Ingresos − Gastos − Invertido</div>
+        <div class="big-card-sub">Ingresos − Gastos efectivo/débito/transf. − Invertido</div>
+      </div>
+      <div class="big-card" style="background:var(--amber-dim);border:1px solid var(--amber);margin-bottom:12px">
+        <div class="big-card-label" style="color:var(--amber)">Deuda tarjeta acumulada este mes</div>
+        <div class="big-card-value amber" id="dash-deuda-tarjeta">$ 0,00</div>
+        <div class="big-card-sub">Lo que pagarás el mes que viene · <span id="dash-deuda-sub"></span></div>
       </div>
       <div class="stats-grid">
         <div class="stat-card" onclick="abrirDetalleMes('ingreso')" style="cursor:pointer">
@@ -329,7 +334,9 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
             <option>Vivienda</option><option>Supermercado</option><option>Transporte</option>
             <option>Salud</option><option>Educación</option><option>Restaurantes y salidas</option>
             <option>Entretenimiento</option><option>Ropa y cuidado personal</option>
-            <option>Tecnología</option><option>Viajes</option><option>Otros</option>
+            <option>Tecnología</option><option>Viajes</option>
+            <option>Pago resumen tarjeta</option>
+            <option>Otros</option>
             <option value="__otro__">Otro (escribir)</option>
           </select>
           <input class="form-input other-input" id="otro-cat" type="text" placeholder="Escribí la categoría">
@@ -820,11 +827,19 @@ function renderDashboard(){
   const aportes=txs.filter(t=>t.tipo==='inversion'&&t.invMov!=='Retiro').reduce((s,t)=>s+t.monto,0);
   const retiros=txs.filter(t=>t.tipo==='inversion'&&t.invMov==='Retiro').reduce((s,t)=>s+t.monto,0);
   const invertidoNeto=aportes-retiros;
-  const disponible=ingresos-gastos-invertidoNeto;
+
+  // Separar gastos tarjeta vs gastos reales (efectivo/débito/transferencia)
+  const tarjetas=['Visa','Mastercard','Visa Pili','Visa Papa'];
+  const gastosTarjeta=txs.filter(t=>t.tipo==='gasto'&&tarjetas.includes(t.medio)).reduce((s,t)=>s+t.monto,0);
+  const gastosReales=txs.filter(t=>t.tipo==='gasto'&&!tarjetas.includes(t.medio)).reduce((s,t)=>s+t.monto,0);
+
+  // Disponible real = ingresos - gastos en efectivo/débito/transf - invertido
+  const disponible=ingresos-gastosReales-invertidoNeto;
   const balance=ingresos-gastos;
 
   document.getElementById('dash-ingresos').textContent=fmt(ingresos);
   document.getElementById('dash-gastos').textContent=fmt(gastos);
+  const gastosTx=txs.filter(t=>t.tipo==='gasto');
   const gastosFijos=gastosTx.filter(t=>t.tipoGasto==='Fijo').reduce((s,t)=>s+t.monto,0);
   const gastosVariables=gastosTx.filter(t=>t.tipoGasto==='Variable'||!t.tipoGasto).reduce((s,t)=>s+t.monto,0);
   const subEl=document.getElementById('dash-gastos-sub');
@@ -835,7 +850,22 @@ function renderDashboard(){
   document.getElementById('dash-disponible').textContent=fmt(disponible);
   document.getElementById('dash-disponible').className='big-card-value '+(disponible>=0?'green':'red');
 
-  const gastosTx=txs.filter(t=>t.tipo==='gasto');
+  // Deuda tarjeta
+  const deudaEl=document.getElementById('dash-deuda-tarjeta');
+  const deudaSubEl=document.getElementById('dash-deuda-sub');
+  if(deudaEl){
+    deudaEl.textContent=fmt(gastosTarjeta);
+    deudaEl.className='big-card-value '+(gastosTarjeta>0?'amber':'green');
+  }
+  if(deudaSubEl&&gastosTarjeta>0){
+    // Desglose por tarjeta
+    const porTarjeta={};
+    txs.filter(t=>t.tipo==='gasto'&&tarjetas.includes(t.medio)).forEach(t=>{porTarjeta[t.medio]=(porTarjeta[t.medio]||0)+t.monto;});
+    deudaSubEl.textContent=Object.entries(porTarjeta).map(([m,v])=>`${m}: ${fmt(v)}`).join(' · ');
+  } else if(deudaSubEl){
+    deudaSubEl.textContent='Sin gastos en tarjeta este mes';
+  }
+
   const totalG=gastosTx.reduce((s,t)=>s+t.monto,0);
   const cats={};gastosTx.forEach(t=>{const k=t.cat||t.desc;cats[k]=(cats[k]||0)+t.monto;});
   const medios={};gastosTx.forEach(t=>{medios[t.medio]=(medios[t.medio]||0)+t.monto;});
@@ -1230,30 +1260,42 @@ async function guardarMovimiento(){
 
 function abrirDetalleMes(tipo){
   const mes=mesKey(mesActual);
-  const txs=txDelMes(mes).filter(t=>t.tipo===tipo);
-  const titulos={gasto:'Gastos',ingreso:'Ingresos',inversion:'Inversiones'};
-  const colores={gasto:'var(--red)',ingreso:'var(--green)',inversion:'var(--blue)'};
-  const total=txs.reduce((s,t)=>s+t.monto,0);
+  const tarjetas=['Visa','Mastercard','Visa Pili','Visa Papa'];
+  let txs,tituloModal,colorModal;
 
-  document.getElementById('modal-title').textContent=titulos[tipo]+' — '+mesNombre(mesActual);
+  if(tipo==='gasto_tarjeta'){
+    txs=txDelMes(mes).filter(t=>t.tipo==='gasto'&&tarjetas.includes(t.medio));
+    tituloModal='Deuda tarjeta — '+mesNombre(mesActual);
+    colorModal='var(--amber)';
+  } else {
+    txs=txDelMes(mes).filter(t=>t.tipo===tipo);
+    const titulos={gasto:'Gastos',ingreso:'Ingresos',inversion:'Inversiones'};
+    const colores={gasto:'var(--red)',ingreso:'var(--green)',inversion:'var(--blue)'};
+    tituloModal=titulos[tipo]+' — '+mesNombre(mesActual);
+    colorModal=colores[tipo];
+  }
+
+  const total=txs.reduce((s,t)=>s+t.monto,0);
+  document.getElementById('modal-title').textContent=tituloModal;
   document.getElementById('modal-content').innerHTML=`
-    <div style="font-family:'DM Serif Display',serif;font-size:32px;color:${colores[tipo]};margin-bottom:16px">${fmt(total)}</div>
+    <div style="font-family:'DM Serif Display',serif;font-size:32px;color:${colorModal};margin-bottom:16px">${fmt(total)}</div>
     ${txs.length===0
       ?'<div class="empty" style="padding:20px 0">Sin movimientos este mes</div>'
       :[...txs].reverse().map(t=>{
         const icons={gasto:'↓',ingreso:'↑',inversion:'◎'};
         const bgs={gasto:'var(--red-dim)',ingreso:'var(--green-dim)',inversion:'var(--blue-dim)'};
-        const label=tipo==='gasto'?(t.cat&&t.cat!==t.desc?`${t.cat} — ${t.desc}`:t.desc||t.cat):tipo==='inversion'?`${t.desc} (${t.invTipo})`:t.desc;
-        const sub=tipo==='gasto'?t.medio:tipo==='inversion'?(t.invMov==='Retiro'?'Retiro':'Aporte'):'';
+        const label=t.tipo==='gasto'?(t.cat&&t.cat!==t.desc?`${t.cat} — ${t.desc}`:t.desc||t.cat):t.tipo==='inversion'?`${t.desc} (${t.invTipo})`:t.desc;
+        const sub=t.tipo==='gasto'?t.medio:t.tipo==='inversion'?(t.invMov==='Retiro'?'Retiro':'Aporte'):'';
+        const tipoIcon=t.tipo;
         const cuotaBadge=parseInt(t.cuotas)>1?`<span class="badge">${t.cuotas}c</span>`:'';
         return`<div class="tx-item">
-          <div class="tx-icon" style="background:${bgs[tipo]}">${icons[tipo]}</div>
+          <div class="tx-icon" style="background:${bgs[tipoIcon]||'var(--amber-dim)'}">${icons[tipoIcon]||'↓'}</div>
           <div class="tx-info">
             <div class="tx-desc">${label}${cuotaBadge}</div>
             <div class="tx-meta">${t.fecha}${sub?' · '+sub:''}</div>
           </div>
           <div class="tx-right">
-            <div class="tx-amount" style="color:${colores[tipo]}">${tipo==='ingreso'?'+':''}${fmt(t.monto,t.moneda)}</div>
+            <div class="tx-amount" style="color:${colorModal}">${t.tipo==='ingreso'?'+':''}${fmt(t.monto,t.moneda)}</div>
           </div>
         </div>`;
       }).join('')
